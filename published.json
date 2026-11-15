@@ -1,17 +1,21 @@
 {
   "_tg": {
-    "offset": 156286570
+    "offset": 156286575
   },
   "batch2-01": {
-    "asked": true
+    "asked": true,
+    "approval": "approved"
   },
   "batch2-02": {
-    "asked": true
+    "asked": true,
+    "approval": "approved"
   },
   "batch2-03": {
-    "asked": true
+    "asked": true,
+    "approval": "approved"
   },
   "batch2-04": {
-    "asked": true
+    "asked": true,
+    "approval": "approved"
   }
 }
