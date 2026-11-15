@@ -33,9 +33,15 @@ def build_queue(posts: list[tuple[str, dict]], day: date, slots: list[tuple[int,
     return queue
 
 
+def _approved(item: dict, entry: dict) -> bool:
+    return not item.get("needs_approval") or entry.get("approval") == "approved"
+
+
 def due_items(queue: list[dict], state: dict, now: datetime) -> list[dict]:
     return [q for q in queue
-            if datetime.fromisoformat(q["at_utc"]) <= now and "media_id" not in state.get(q["id"], {})]
+            if datetime.fromisoformat(q["at_utc"]) <= now
+            and "media_id" not in state.get(q["id"], {})
+            and _approved(q, state.get(q["id"], {}))]
 
 
 def publish_due(queue: list[dict], state: dict, now: datetime, publish_one: Callable[[dict], str]) -> dict:
@@ -84,10 +90,60 @@ def _run(queue_path: Path, state_path: Path) -> int:
 
     queue = json.loads(queue_path.read_text())
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    bot = _make_bot()
+    if bot:
+        state = _sync_approvals(bot, queue, state)
     new_state = publish_due(queue, state, datetime.now(timezone.utc), publish_one)
+    if bot:
+        _report(bot, queue, state, new_state)
     state_path.write_text(json.dumps(new_state, ensure_ascii=False, indent=2))
-    failed = [k for k, v in new_state.items() if "error" in v]
+    failed = [k for k, v in new_state.items() if isinstance(v, dict) and "error" in v and k != "_tg"]
     return 1 if failed else 0
+
+
+def _make_bot():
+    """Telegram client if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set; publishing works without it."""
+    from telegram_bot import TelegramClient
+
+    token, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
+    return TelegramClient(token, int(chat)) if token and chat else None
+
+
+def _local_time(item: dict) -> str:
+    local = datetime.fromisoformat(item["at_utc"]).astimezone(timezone(timedelta(hours=LOCAL_UTC_OFFSET_HOURS)))
+    return local.strftime("%d.%m %H:%M")
+
+
+def _sync_approvals(bot, queue: list[dict], state: dict) -> dict:
+    """Read button presses, then send new approval requests. Telegram errors never block publishing."""
+    from telegram_bot import TelegramError, apply_callbacks, items_to_ask
+
+    try:
+        updates = bot.updates(state.get("_tg", {}).get("offset", 0))
+        state, acks = apply_callbacks(state, updates, allowed_chat_id=bot.chat_id)
+        for ack in acks:
+            bot.acknowledge(ack)
+        for item in items_to_ask(queue, state):
+            bot.ask_approval(item, _local_time(item))
+            state = {**state, item["id"]: {**state.get(item["id"], {}), "asked": True}}
+    except TelegramError as err:
+        log.error("Telegram sync failed: %s", err)
+    return state
+
+
+def _report(bot, queue: list[dict], before: dict, after: dict) -> None:
+    from telegram_bot import TelegramError
+
+    titles = {q["id"]: q["post"]["caption"].split("\n", 1)[0] for q in queue}
+    for item_id, entry in after.items():
+        if item_id == "_tg" or entry == before.get(item_id):
+            continue
+        text = (f"✅ Вышел пост {item_id}: {titles.get(item_id, '')}" if "media_id" in entry
+                else f"❌ Ошибка в посте {item_id}: {entry.get('error', '')[:300]}\nПовторю через час.")
+        try:
+            bot.send(text)
+        except TelegramError as err:
+            log.error("Telegram report failed: %s", err)
 
 
 def main(argv: list[str]) -> int:

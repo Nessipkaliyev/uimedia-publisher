@@ -1,7 +1,7 @@
 name: Publish due posts
 on:
   schedule:
-    - cron: "5 3-16 * * *"   # hourly 08:05–21:05 Kazakhstan (UTC+5)
+    - cron: "5,35 1-16 * * *"   # every 30 min 06:05–21:35 Kazakhstan (UTC+5)
   workflow_dispatch:
 permissions:
   contents: write
@@ -21,6 +21,8 @@ jobs:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_API_BASE: ${{ secrets.IG_API_BASE }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python run_queue.py queue.json published.json
       - name: Save state
         if: always()
