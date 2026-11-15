@@ -90,14 +90,18 @@ def _run(queue_path: Path, state_path: Path) -> int:
         log.error("IG_USER_ID and IG_ACCESS_TOKEN must be set")
         return 1
     http = make_http(token, os.environ.get("IG_API_BASE") or DEFAULT_API_BASE)
+    bot = _make_bot()
+    channel = os.environ.get("TELEGRAM_CHANNEL")
 
     def publish_one(item: dict) -> str:
         p = item["post"]
-        return publish(Post(kind=p["kind"], media_urls=tuple(p["media_urls"]), caption=p["caption"]), user_id, http)
+        media_id = publish(Post(kind=p["kind"], media_urls=tuple(p["media_urls"]), caption=p["caption"]), user_id, http)
+        if bot and channel:
+            _crosspost(bot, channel, item)  # runs once, only after Instagram succeeded
+        return media_id
 
     queue = json.loads(queue_path.read_text())
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
-    bot = _make_bot()
     if bot:
         state = _sync_approvals(bot, queue, state)
     new_state = publish_due(queue, state, datetime.now(timezone.utc), publish_one)
@@ -114,6 +118,17 @@ def _make_bot():
 
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
     return TelegramClient(token, int(chat)) if token and chat else None
+
+
+def _crosspost(bot, channel: str, item: dict) -> None:
+    """Telegram channel copy; a failure is logged and never undoes the Instagram post."""
+    from telegram_bot import TelegramError
+
+    try:
+        bot.post_to_channel(channel, item["post"])
+        log.info("%s copied to %s", item["id"], channel)
+    except TelegramError as err:
+        log.error("%s channel copy failed: %s", item["id"], err)
 
 
 def _local_time(item: dict) -> str:

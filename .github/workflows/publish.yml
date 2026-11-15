@@ -23,6 +23,7 @@ jobs:
           IG_API_BASE: ${{ secrets.IG_API_BASE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHANNEL: "@uimedia_kz"
         run: python run_queue.py queue.json published.json
       - name: Save state
         if: always()

@@ -15,6 +15,7 @@ from pathlib import Path
 
 HTTP_TIMEOUT_SECONDS = 30
 MAX_CAPTION_PREVIEW = 900  # Telegram photo caption limit is 1024
+PHOTO_CAPTION_LIMIT = 1024
 
 log = logging.getLogger("telegram_bot")
 
@@ -53,6 +54,17 @@ def apply_callbacks(state: dict, updates: list[dict], allowed_chat_id: int) -> t
     return new_state, acks
 
 
+def channel_caption(caption: str, channel: str) -> str:
+    """Instagram caption adapted for Telegram: no hashtag block, channel signature, within limits."""
+    lines = [ln for ln in caption.rstrip().split("\n") if not ln.lstrip().startswith("#")]
+    body = "\n".join(lines).rstrip()
+    signature = f"\n\n🏠 {channel}"
+    room = PHOTO_CAPTION_LIMIT - len(signature)
+    if len(body) > room:
+        body = body[: room - 1].rstrip() + "…"
+    return body + signature
+
+
 def items_to_ask(queue: list[dict], state: dict) -> list[dict]:
     return [q for q in queue if q.get("needs_approval") and not state.get(q["id"], {}).get("asked")]
 
@@ -84,6 +96,10 @@ class TelegramClient:
         caption = f"🕒 {when_local} — на одобрение\n\n{post['caption'][:MAX_CAPTION_PREVIEW]}"
         self.call("sendPhoto", {"chat_id": self.chat_id, "photo": post["media_urls"][0], "caption": caption,
                                 "reply_markup": approval_keyboard(item["id"])})
+
+    def post_to_channel(self, channel: str, post: dict) -> None:
+        self.call("sendPhoto", {"chat_id": channel, "photo": post["media_urls"][0],
+                                "caption": channel_caption(post["caption"], channel)})
 
     def updates(self, offset: int) -> list[dict]:
         return self.call("getUpdates", {"offset": offset, "timeout": 0, "allowed_updates": ["callback_query"]})
