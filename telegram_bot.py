@@ -106,7 +106,10 @@ class TelegramClient:
 
     def acknowledge(self, ack: dict) -> None:
         label = "✅ Одобрено — выйдет по расписанию" if ack["decision"] == "approved" else "❌ Пропущено"
-        self.call("answerCallbackQuery", {"callback_query_id": ack["callback_id"], "text": label})
+        try:
+            self.call("answerCallbackQuery", {"callback_query_id": ack["callback_id"], "text": label})
+        except TelegramError as err:  # expected: runs every 30 min, Telegram expires callbacks sooner
+            log.info("Callback popup skipped (%s); updating the button instead", err)
         self.call("editMessageReplyMarkup", {"chat_id": self.chat_id, "message_id": ack["message_id"],
                                              "reply_markup": {"inline_keyboard": [[
                                                  {"text": label, "callback_data": "noop"}]]}})
