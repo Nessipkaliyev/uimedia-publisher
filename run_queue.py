@@ -64,14 +64,21 @@ def _build(batch_dir: Path, day: date, out: Path) -> int:
     from schedule_batch import SLOTS
 
     config = CloudConfig.from_env(load_env(Path(__file__).with_name(".env")))
-    posts = []
+    existing = json.loads(out.read_text()) if out.exists() else []
+    taken = {q["id"] for q in existing}
+    posts, approvals = [], {}
     for post_file in sorted(batch_dir.glob("[0-9][0-9].json")):
+        post_id = f"{batch_dir.name}-{post_file.stem}"
+        if post_id in taken:
+            raise ValueError(f"{post_id} is already in {out}; refusing to add twice")
         raw = json.loads(post_file.read_text())
         urls = [upload(batch_dir / f, config) for f in raw.get("media_files", [])]
-        post = {"kind": raw["kind"], "media_urls": raw.get("media_urls", []) + urls, "caption": raw["caption"]}
-        posts.append((post_file.stem, post))
-    out.write_text(json.dumps(build_queue(posts, day, SLOTS), ensure_ascii=False, indent=2))
-    log.info("Queue with %d posts written to %s", len(posts), out)
+        posts.append((post_id, {"kind": raw["kind"], "media_urls": raw.get("media_urls", []) + urls,
+                                "caption": raw["caption"]}))
+        approvals[post_id] = bool(raw.get("needs_approval"))
+    added = [{**q, "needs_approval": True} if approvals[q["id"]] else q for q in build_queue(posts, day, SLOTS)]
+    out.write_text(json.dumps(existing + added, ensure_ascii=False, indent=2))
+    log.info("Added %d posts to %s (%d need approval)", len(added), out, sum(approvals.values()))
     return 0
 
 
