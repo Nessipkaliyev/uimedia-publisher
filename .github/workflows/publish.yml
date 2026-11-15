@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: publish
+  group: repo-state
   cancel-in-progress: false
 jobs:
   publish:
@@ -31,5 +31,5 @@ jobs:
           git config user.name "uimedia-bot"
           git config user.email "uimedia-bot@users.noreply.github.com"
           if [ -f published.json ] && [ -n "$(git status --porcelain published.json)" ]; then
-            git add published.json && git commit -m "chore: update published state" && git push
+            git add published.json && git commit -m "chore: update published state" && git pull --rebase -q && git push
           fi

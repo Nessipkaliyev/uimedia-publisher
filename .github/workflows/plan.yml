@@ -1,0 +1,25 @@
+name: Content plan
+on:
+  schedule:
+    - cron: "0 16 * * *"   # 21:00 Kazakhstan — plan for tomorrow
+  workflow_dispatch:
+    inputs:
+      all_days:
+        description: "Send every planned day"
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Send plan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python digests.py plan queue.json published.json ${{ inputs.all_days && '--all' || '' }}

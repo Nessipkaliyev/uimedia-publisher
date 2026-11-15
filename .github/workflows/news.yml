@@ -1,0 +1,34 @@
+name: News digest
+on:
+  schedule:
+    - cron: "5 4,8,13 * * *"   # 09:05, 13:05, 18:05 Kazakhstan
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: repo-state
+  cancel-in-progress: false
+env:
+  STATE_FILES: news_seen.json
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Send news
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python digests.py news news_seen.json
+      - name: Save state
+        if: always()
+        run: |
+          git config user.name "uimedia-bot"
+          git config user.email "uimedia-bot@users.noreply.github.com"
+          git add -A ${{ env.STATE_FILES }}
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update ${{ github.workflow }} state" && git pull --rebase -q && git push
+          fi
