@@ -1,0 +1,32 @@
+name: Publish due posts
+on:
+  schedule:
+    - cron: "5 3-16 * * *"   # hourly 08:05–21:05 Kazakhstan (UTC+5)
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Publish
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_API_BASE: ${{ secrets.IG_API_BASE }}
+        run: python run_queue.py queue.json published.json
+      - name: Save state
+        if: always()
+        run: |
+          git config user.name "uimedia-bot"
+          git config user.email "uimedia-bot@users.noreply.github.com"
+          if [ -f published.json ] && [ -n "$(git status --porcelain published.json)" ]; then
+            git add published.json && git commit -m "chore: update published state" && git push
+          fi
