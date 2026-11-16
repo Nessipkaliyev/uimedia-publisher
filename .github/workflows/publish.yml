@@ -1,22 +1,26 @@
 name: Publish due posts
+# Long-running loop: checks the queue every 5 min, then re-launches itself.
+# GitHub cron is only a backup — it is often delayed for hours.
 on:
   schedule:
-    - cron: "5,35 1-16 * * *"   # every 30 min 06:05–21:35 Kazakhstan (UTC+5)
+    - cron: "5 */3 * * *"
   workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 concurrency:
-  group: repo-state
+  group: publisher-loop
   cancel-in-progress: false
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Publish
+      - name: Publish loop
         env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
@@ -24,12 +28,21 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CHANNEL: "@uimedia_kz"
-        run: python run_queue.py queue.json published.json
-      - name: Save state
-        if: always()
         run: |
           git config user.name "uimedia-bot"
           git config user.email "uimedia-bot@users.noreply.github.com"
-          if [ -f published.json ] && [ -n "$(git status --porcelain published.json)" ]; then
-            git add published.json && git commit -m "chore: update published state" && git pull --rebase -q && git push
-          fi
+          end=$(( $(date +%s) + 325*60 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            git pull --rebase -q || true
+            python run_queue.py queue.json published.json || echo "some posts failed, will retry"
+            if [ -n "$(git status --porcelain published.json)" ]; then
+              git add published.json && git commit -qm "chore: update published state" \
+                && (git push -q || (git pull --rebase -q && git push -q)) || echo "state push failed"
+            fi
+            sleep 300
+          done
+      - name: Relaunch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run publish.yml --repo "${{ github.repository }}"
